@@ -140,6 +140,19 @@ type_erased_stream<string> numberStream() {
   }));
 }
 
+void setBellMode(bool enabled) {
+  gpioWrite(PIN_RING_ENABLE, enabled);
+}
+
+void hitBell(bool left) {
+  if(left) {
+    gpioWrite(PIN_RING_LEFT, 1);
+    gpioWrite(PIN_RING_RIGHT,0);
+  } else {
+    gpioWrite(PIN_RING_LEFT, 0);
+    gpioWrite(PIN_RING_RIGHT, 1);
+  }
+}
 
 task<void> ring(unsigned  count, unsigned freq) {
   if (gpioWrite(PIN_RING_ENABLE, 1) != 0) {
@@ -159,6 +172,4 @@ task<void> ring(unsigned  count, unsigned freq) {
   if (gpioWrite(PIN_RING_ENABLE, 0) != 0) {
     cout << "ERROR disabling RING" << endl;
   }
-
-  co_return;
 }
