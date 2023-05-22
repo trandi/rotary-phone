@@ -15,22 +15,42 @@
 #include <unifex/inline_scheduler.hpp>
 #include <unifex/timed_single_thread_context.hpp>
 
-
-int main() {
-  initPhone(); 
-
-  unifex::timed_single_thread_context ctx;
-
-  /*
-  Subprocess proc;
+/*
+unifex::timed_single_thread_context ctx;
+unifex::typed_sender auto  asyncMain(Subprocess* proc) {
+  Linphone linphone(proc);
   
-  proc.runCmd("stress --cpu 4 --timeout 3");
-  proc.runCmd("stress --cpu 2 --timeout 5");
-   
-  unifex::sync_wait(proc.complete());
+  return linphone.monitorIncomingCalls(
+    
+  );
+
+}
+*/
+int main() {
+  Phone phone;
+
+  while(true) {
+    
+  }
+
+/*
+  unifex::v1::async_scope scope;  
+  Subprocess proc(&scope);
+  Linphone linphone(&proc);
+
+  scope.detached_spawn_on(
+    ctx.get_scheduler(), 
+    linphone.monitorIncomingCalls(
+      ring(10, 20),
+      []() {}
+    )
+  );
+
+  unifex::sync_wait(scope.complete());
+
   */
 
-  unifex::sync_wait(unifex::on(ctx.get_scheduler(), ringS(100, 20)));
+  // unifex::sync_wait(unifex::on(ctx.get_scheduler(), ring(100, 20)));
 
 
   // sync_wait(ring(100, 20));
@@ -45,7 +65,6 @@ int main() {
   //  sync_wait(getAndPrintNumber());
   // }
 
-  stopPhone();
 
   return 0;
 }

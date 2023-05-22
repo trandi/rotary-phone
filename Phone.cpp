@@ -18,8 +18,6 @@
 #include <unifex/async_manual_reset_event.hpp>
 #include <unifex/async_auto_reset_event.hpp>
 
-using namespace std;
-using namespace unifex;
 using namespace std::chrono;
 using namespace std::chrono_literals;
 
@@ -36,17 +34,20 @@ constexpr Pin PIN_RING_RIGHT = 4; // Connector PIN 7
 constexpr Pin PIN_BUTTON = 14; // Connector PIN 8
 constexpr Pin PIN_DIAL_ENABLE = 17; // Connector PIN 10
 constexpr Pin PIN_DIAL_PULSE = 15; // Connector PIN 11
+constexpr Pin PIN_HOOK = 18; // Connector PIN 12
 
 namespace {
 
+/*
 timed_single_thread_context sleepExecutionContext;
 // returns a Sender that can be co_awaited in a task<>
 auto sleep(milliseconds ms) {
   // schedule_after needs a TimedScheduler, which is not the one tasks use
   return schedule_after(sleepExecutionContext.get_scheduler(), ms);
 }
+*/
 
-unordered_map<Pin, MicrosTick> lastCallback;
+std::unordered_map<Pin, MicrosTick> lastCallback;
 bool debounce(Pin pin, MicrosTick tick) {
   auto prevTick = lastCallback[pin];
   lastCallback[pin] = tick;
@@ -55,14 +56,14 @@ bool debounce(Pin pin, MicrosTick tick) {
 }
 
 unsigned currentDigit;
-string currentNumber, prevNumber;
-async_auto_reset_event numberReady;
+std::string currentNumber, prevNumber;
+unifex::async_auto_reset_event numberReady;
 
 void pulseCallback(Pin gpio, int level, MicrosTick tick) {
   if(debounce(gpio, tick)) {
     if(gpio == PIN_DIAL_ENABLE) {
       if(level) {
-        currentNumber += to_string(currentDigit); 
+        currentNumber += std::to_string(currentDigit); 
       } else {
         currentDigit = 0;
       }
@@ -76,7 +77,7 @@ void pulseCallback(Pin gpio, int level, MicrosTick tick) {
 void buttonCallback(Pin gpio, int level, MicrosTick tick) {
   if(debounce(gpio, tick)) {
     if(level) {
-      cout << "Button pressed, number recorded: " << currentNumber << endl;
+      std::cout << "Button pressed, number recorded: " << currentNumber << std::endl;
       prevNumber = currentNumber;
       currentNumber = "";
       numberReady.set();
@@ -84,31 +85,39 @@ void buttonCallback(Pin gpio, int level, MicrosTick tick) {
   }
 } 
 
+bool hook;
+void hookCallback(Pin gpio, int level, MicrosTick tick) {
+  if(debounce(gpio, tick)) {
+    hook = level;
+    std::cout << "Hook: " << (hook ? "true" : "false") << std::endl;
+  }
+}
+ 
 } // namespace
 
 
 
 
-void initPhone() {
-  cout << "Phone STARTING" << endl;
+Phone::Phone() {
+  std::cout << "Phone STARTING" << std::endl;
 
-  cout << "PiGPIO initialisation, version: " << gpioInitialise() << endl;
+  std::cout << "PiGPIO initialisation, version: " << gpioInitialise() << std::endl;
 
-  cout << "Configure RING: " << (
+  std::cout << "Configure RING: " << (
     gpioSetMode(PIN_RING_ENABLE, PI_OUTPUT) == 0
-    ? "success" : "failure") << endl;
+    ? "success" : "failure") << std::endl;
  
-  cout << "Configure TOGGLE: " << (
+  std::cout << "Configure TOGGLE: " << (
     gpioSetMode(PIN_RING_LEFT, PI_OUTPUT) == 0 && gpioSetMode(PIN_RING_RIGHT, PI_OUTPUT) == 0
-    ? "success" : "failure") << endl;
+    ? "success" : "failure") << std::endl;
  
-  cout << "Configure BUTTON: " << (
+  std::cout << "Configure BUTTON: " << (
     gpioSetMode(PIN_BUTTON, PI_INPUT) == 0 &&
     gpioSetPullUpDown(PIN_BUTTON, PI_PUD_UP) == 0 &&
     gpioSetAlertFunc(PIN_BUTTON, buttonCallback) == 0
-    ? "success" : "failure") << endl;
+    ? "success" : "failure") << std::endl;
 
-  cout << "Configure PULSES: " << (
+  std::cout << "Configure PULSES: " << (
     gpioSetMode(PIN_DIAL_ENABLE, PI_INPUT) == 0 &&
     gpioSetPullUpDown(PIN_DIAL_ENABLE, PI_PUD_UP) == 0 &&
     gpioSetAlertFunc(PIN_DIAL_ENABLE, pulseCallback) == 0 &&
@@ -116,11 +125,18 @@ void initPhone() {
     gpioSetMode(PIN_DIAL_PULSE, PI_INPUT) == 0 &&
     gpioSetPullUpDown(PIN_DIAL_PULSE, PI_PUD_UP) == 0 &&
     gpioSetAlertFunc(PIN_DIAL_PULSE, pulseCallback) == 0
-    ? "success" : "failure") << endl;
+    ? "success" : "failure") << std::endl;
+
+  std::cout << "Configure HOOK: " << (
+    gpioSetMode(PIN_HOOK, PI_INPUT) == 0 &&
+    gpioSetPullUpDown(PIN_HOOK, PI_PUD_UP) == 0 &&
+    gpioSetAlertFunc(PIN_HOOK, hookCallback) == 0
+    ? "success" : "failure") << std::endl;
+
 }
 
-void stopPhone() {
-  cout << "Phone DESTRUCTOR" << endl;
+Phone::~Phone() {
+  std::cout << "Phone DESTRUCTOR" << std::endl;
   gpioTerminate();
 }
 
@@ -132,19 +148,23 @@ task<string> nextNumber() {
   numberReady.reset();
   co_return prevNumber;
 }
+
+
+unifex::type_erased_stream<std::string> numberStream() {
+  return unifex::type_erase<std::string>(
+    unifex::transform_stream(numberReady.stream(), []() {
+      return prevNumber;
+    })
+  );
+}
 */
 
-type_erased_stream<string> numberStream() {
-  return type_erase<string>(transform_stream(numberReady.stream(), []() {
-    return prevNumber;
-  }));
-}
 
-void setBellMode(bool enabled) {
+void Phone::setBellMode(bool enabled) {
   gpioWrite(PIN_RING_ENABLE, enabled);
 }
 
-void hitBell(bool left) {
+void Phone::hitBell(bool left) {
   if(left) {
     gpioWrite(PIN_RING_LEFT, 1);
     gpioWrite(PIN_RING_RIGHT,0);
@@ -154,6 +174,7 @@ void hitBell(bool left) {
   }
 }
 
+/*
 task<void> ring(unsigned  count, unsigned freq) {
   if (gpioWrite(PIN_RING_ENABLE, 1) != 0) {
     cout << "ERROR enabling RING" << endl;
@@ -173,3 +194,4 @@ task<void> ring(unsigned  count, unsigned freq) {
     cout << "ERROR disabling RING" << endl;
   }
 }
+*/
