@@ -96,9 +96,13 @@ void hookCallback(Pin gpio, int level, MicrosTick tick) {
 } // namespace
 
 
+/*static*/ std::shared_ptr<Phone> Phone::create() {
+  static auto instance_ = std::make_shared<Phone>(NotPubliclyConstructible()); 
+  
+  return instance_;
+}
 
-
-Phone::Phone() {
+Phone::Phone(Phone::NotPubliclyConstructible) {
   std::cout << "Phone STARTING" << std::endl;
 
   std::cout << "PiGPIO initialisation, version: " << gpioInitialise() << std::endl;

@@ -27,7 +27,7 @@ unifex::typed_sender auto  asyncMain(Subprocess* proc) {
 }
 */
 int main() {
-  Phone phone;
+  Phone phone = Phone::create();
 
   while(true) {
     

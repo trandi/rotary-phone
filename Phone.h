@@ -2,6 +2,7 @@
 
 #include <string>
 #include <chrono>
+#include <memory>
 
 #include <unifex/task.hpp>
 #include <unifex/type_erased_stream.hpp>
@@ -12,10 +13,27 @@
 #include <unifex/scheduler_concepts.hpp>
 
 
-struct Phone {
+class  Phone {
+  struct NotPubliclyConstructible{};
 
-  Phone();
+  void setBellMode(bool enable);
+  void hitBell(bool left);
+
+
+public:
+  // use factory method to ensure singleton 
+  static std::shared_ptr<Phone> create();
+
+  Phone(Phone&&) = default;
+  Phone& operator=(Phone&) = default;
+
+  // can't make constructor private as we want it to work with std::make_shared<> yet we want to force usage of static factory method
+  explicit Phone(NotPubliclyConstructible);
   ~Phone();
+
+  // given that it controls GPIOs we can't have more than 1 single instance
+  Phone(const Phone&) = delete;
+  Phone& operator=(const Phone&) = delete;
 
   //unifex::task<void> ring(unsigned count, unsigned freq);
   //unifex::type_erased_stream<std::string> numberStream();
@@ -52,9 +70,5 @@ struct Phone {
     );
   }
 
-private:
 
-  void setBellMode(bool enable);
-  void hitBell(bool left);
-
-};
+}; // Phone
