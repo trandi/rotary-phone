@@ -40,13 +40,16 @@ public:
   // starts a command in the background and does NOT wait for it
   // returns a sender<void>
   inline unifex::typed_sender auto startCmd(const std::string& cmd) {
-    // spawning detached means no one can inspect the result -> it requires sender<void>
-    scope_->detached_spawn_on(ctx_.get_scheduler(), unifex::let_value(doRunCmd(cmd), [](auto) {
-      // discard the returned output
-      return unifex::just();
-    }));
+    // wrap the spawning in a sender so as to start only when connected to a receiver
+    return unifex::create<void>([this, cmd](auto& receiver) {
+      // spawning detached means no one can inspect the result -> it requires sender<void>
+      scope_->detached_spawn_on(ctx_.get_scheduler(), unifex::let_value(doRunCmd(cmd), [](auto) {
+        // discard the returned output
+        return unifex::just();
+      }));
 
-    return unifex::just();
+      receiver.set_value();
+    });
   }
 
   // starts a command and waits for it to finish

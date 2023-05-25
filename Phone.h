@@ -19,7 +19,6 @@ class  Phone {
   void setBellMode(bool enable);
   void hitBell(bool left);
 
-
 public:
   // use factory method to ensure singleton 
   static std::shared_ptr<Phone> create();
@@ -38,6 +37,8 @@ public:
   //unifex::task<void> ring(unsigned count, unsigned freq);
   //unifex::type_erased_stream<std::string> numberStream();
 
+
+  bool hookStatus();
 
   // HAS to be run an a timed_single_thread_context (or similar) provided scheduler
   inline unifex::typed_sender auto ring(unsigned count, unsigned freq) {

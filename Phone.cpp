@@ -163,6 +163,9 @@ unifex::type_erased_stream<std::string> numberStream() {
 }
 */
 
+bool Phone::hookStatus() {
+  return hook;
+}
 
 void Phone::setBellMode(bool enabled) {
   gpioWrite(PIN_RING_ENABLE, enabled);

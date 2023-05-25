@@ -15,8 +15,10 @@
 #include <unifex/inline_scheduler.hpp>
 #include <unifex/timed_single_thread_context.hpp>
 
-/*
+
 unifex::timed_single_thread_context ctx;
+
+/*
 unifex::typed_sender auto  asyncMain(Subprocess* proc) {
   Linphone linphone(proc);
   
@@ -27,28 +29,21 @@ unifex::typed_sender auto  asyncMain(Subprocess* proc) {
 }
 */
 int main() {
-  Phone phone = Phone::create();
-
-  while(true) {
-    
-  }
-
-/*
-  unifex::v1::async_scope scope;  
+  auto phone = Phone::create();
+  unifex::v1::async_scope scope;
   Subprocess proc(&scope);
   Linphone linphone(&proc);
 
   scope.detached_spawn_on(
     ctx.get_scheduler(), 
     linphone.monitorIncomingCalls(
-      ring(10, 20),
-      []() {}
+      unifex::just_from([](){std::cout << "RINGING !" << std::endl;}),//phone->ring(10, 20),
+      [&phone]() { return !phone->hookStatus(); }
     )
   );
 
   unifex::sync_wait(scope.complete());
 
-  */
 
   // unifex::sync_wait(unifex::on(ctx.get_scheduler(), ring(100, 20)));
 
