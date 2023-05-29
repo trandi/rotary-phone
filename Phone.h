@@ -3,6 +3,7 @@
 #include <string>
 #include <chrono>
 #include <memory>
+#include <iostream>
 
 #include <unifex/task.hpp>
 #include <unifex/type_erased_stream.hpp>
@@ -11,6 +12,10 @@
 #include <unifex/just_from.hpp>
 #include <unifex/repeat_effect_until.hpp>
 #include <unifex/scheduler_concepts.hpp>
+#include <unifex/let_value.hpp>
+#include <unifex/timed_single_thread_context.hpp>
+#include <unifex/on.hpp>
+
 
 
 class  Phone {
@@ -19,8 +24,12 @@ class  Phone {
   void setBellMode(bool enable);
   void hitBell(bool left);
 
+  // TODO unused
+  unifex::timed_single_thread_context ctx_;
+
 public:
   // use factory method to ensure singleton 
+  // TODO use unique_ptr ??
   static std::shared_ptr<Phone> create();
 
   Phone(Phone&&) = default;
@@ -41,15 +50,18 @@ public:
   bool hookStatus();
 
   // HAS to be run an a timed_single_thread_context (or similar) provided scheduler
-  inline unifex::typed_sender auto ring(unsigned count, unsigned freq) {
+  template <typename Predicate>
+  inline unifex::typed_sender auto ring(unsigned freq, Predicate until) {
     auto delayMs = std::chrono::milliseconds(1000 / freq / 2);
 
     auto one = unifex::sequence(  
       unifex::just_from([&] {
+        std::cout << "HitBell TRUE" << std::endl;
         hitBell(true);
       }),
       unifex::schedule_after(unifex::current_scheduler, delayMs),
       unifex::just_from([&] {
+        std::cout<< "HitBell FALSE" << std::endl;
         hitBell(false);
       }),
       unifex::schedule_after(unifex::current_scheduler, delayMs) 
@@ -57,15 +69,15 @@ public:
 
     return unifex::sequence(
       unifex::just_from([&] {
+        std::cout << "Started Ringing..." << std::endl;
         setBellMode(true);
       }),
       unifex::repeat_effect_until(
-        one,
-        [&]() {
-          return count-- < 0;
-        }
+        unifex::sequence(one, one, one, one, one, one),
+        until
       ),
       unifex::just_from([&] {
+        std::cout << "Stopped Ringing" << std::endl;
         setBellMode(false);
       })
     );

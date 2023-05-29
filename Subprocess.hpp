@@ -18,53 +18,43 @@
 #include <unifex/just.hpp>
 
 
-class Subprocess {
-
-  // this HAS to be in the header to use return type deduction, which we have to
-  inline unifex::typed_sender auto doRunCmd(const std::string& cmd) {
-    return unifex::create<std::string>([cmd](auto& receiver) {
-      // take over the captured var in case sender gests suspended and lambda object dissapears
-      std::string c = std::move(cmd);
-      std::cout << "Running command: " << c << std::endl;
-      auto res = Subprocess::exec(cmd.data());
-      receiver.set_value(std::move(res));
-    });
-  }
-
-
-public:
+struct Subprocess {
 
   explicit Subprocess(unifex::v1::async_scope* scope): scope_(scope){
   }
 
+/*
   // starts a command in the background and does NOT wait for it
   // returns a sender<void>
   inline unifex::typed_sender auto startCmd(const std::string& cmd) {
     // wrap the spawning in a sender so as to start only when connected to a receiver
-    return unifex::create<void>([this, cmd](auto& receiver) {
-      // spawning detached means no one can inspect the result -> it requires sender<void>
-      scope_->detached_spawn_on(ctx_.get_scheduler(), unifex::let_value(doRunCmd(cmd), [](auto) {
-        // discard the returned output
-        return unifex::just();
-      }));
-
-      receiver.set_value();
+    return unifex::create<std::shared_ptr<FILE>>([this, cmd](auto& receiver) {
+      std::cout << "Popen cmd: " << cmd << std::endl;
+      std::shared_ptr<FILE> pipe(popen(cmd.data(), "r"), pclose);
+      receiver.set_value(pipe);
     });
   }
+*/
 
   // starts a command and waits for it to finish
   // returns the stdout from console
+  // this HAS to be in the header to use return type deduction, which we have to
   inline unifex::typed_sender auto runCmd(const std::string& cmd) {
-    return doRunCmd(cmd);
+    return unifex::just_from([cmd]() {
+      return Subprocess::exec(cmd.data());
+    });
   }
 
 private:
 
   // runs a command and grabs the output
-  static std::string exec(const char* cmd) {
-    std::string res;
-    std::shared_ptr<FILE> pipe(popen(cmd, "r"), pclose);
+  static std::string exec(const std::string& cmd) {
+    // program needs to run as root because of PIGPIO, make sure that commands run as pi
+    std::string actualCmd = "su pi -c '" + cmd + "'";
+    std::cout << "Popen cmd and wait for output: " << actualCmd << std::endl;
+    std::shared_ptr<FILE> pipe(popen(actualCmd.data(), "r"), pclose);
 
+    std::string res("");
     if(pipe) {
       char buff[256];
       while (!feof(pipe.get())) {
@@ -78,7 +68,7 @@ private:
   }
 
   
-
+  // TODO delete these as unused
   unifex::new_thread_context ctx_;
   unifex::v1::async_scope* scope_;
 

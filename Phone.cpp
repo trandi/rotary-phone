@@ -85,7 +85,7 @@ void buttonCallback(Pin gpio, int level, MicrosTick tick) {
   }
 } 
 
-bool hook;
+bool hook{true}; //HAS to start with the hook in place
 void hookCallback(Pin gpio, int level, MicrosTick tick) {
   if(debounce(gpio, tick)) {
     hook = level;

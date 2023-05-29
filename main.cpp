@@ -16,7 +16,7 @@
 #include <unifex/timed_single_thread_context.hpp>
 
 
-unifex::timed_single_thread_context ctx;
+unifex::timed_single_thread_context ctx_;
 
 /*
 unifex::typed_sender auto  asyncMain(Subprocess* proc) {
@@ -34,14 +34,43 @@ int main() {
   Subprocess proc(&scope);
   Linphone linphone(&proc);
 
-  scope.detached_spawn_on(
-    ctx.get_scheduler(), 
+/*
+  unifex::sync_wait(
+      ctx_.get_scheduler(), phone->ring(
+        20,
+        [ph = phone.get()]() {
+          return !ph->hookStatus();; 
+        }
+      ));
+
+
+*/
+  unifex::sync_wait(unifex::on(ctx_.get_scheduler(),
     linphone.monitorIncomingCalls(
-      unifex::just_from([](){std::cout << "RINGING !" << std::endl;}),//phone->ring(10, 20),
-      [&phone]() { return !phone->hookStatus(); }
-    )
+      //unifex::just_from([]{std::cout << "RING ...." << std::endl; }), 
+      //unifex::on(ctx_.get_scheduler(), phone->ring(10, 20)),
+      phone->ring(
+        20,
+        [ph = phone.get()]() {
+          return !ph->hookStatus();; 
+        }
+      )
+    ))
   );
 
+
+/*
+  scope.detached_spawn_on(
+    ctx.get_scheduler(), 
+    unifex::let_value(
+      linphone.monitorIncomingCalls(
+        unifex::just_from([](){std::cout << "RINGING !" << std::endl;}),//phone->ring(10, 20),
+        [&phone]() { return !phone->hookStatus(); }
+      ),
+      [](auto) { return unifex::just();}
+    )
+  );
+*/
   unifex::sync_wait(scope.complete());
 
 
