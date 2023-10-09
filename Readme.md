@@ -17,9 +17,9 @@ So I had to add `snd_bcm2835` to `/etc/modprobe.d/alsa-blacklist.conf` to comple
   - `hook=on-hook`
   - `Incoming call from sip:red-phone@sip.linphone.org`
 
+.
 
-
-I had quite a lot of issues and spend literally weeks trying figure out why `Phone::ring()` wasn't working as it should: it would either hang forever or hit the bell continuously ignoring the **delay** in between.
+I had quite a lot of issues and spent literally weeks trying figure out why `Phone::ring()` wasn't working as it should: it would either hang forever or hit the bell continuously ignoring the **delay** in between.
 It turns out the problem was in `Linphone::monitorIncomingCalls()` where I defined a **lambda** creating a sender and then took that lambda by **reference** into the lambda composing the final sender returned from the method. 
 That capture (lambda or not)  would go out of scope by the time the returned sender was executed which explains why I'd have "random" results that didn't make any sense (behaviour would change depending on simply defining unused methods or not, something which only lately I realised was a clear sign of Undefined Behaviour).
-Overall, somewhat simliar to why one should avoid [Capturing Lambda Coroutings](https://clang.llvm.org/extra/clang-tidy/checks/cppcoreguidelines/avoid-capturing-lambda-coroutines.html).
+Overall, somewhat simliar to why one should avoid [Capturing Lambda Coroutines](https://clang.llvm.org/extra/clang-tidy/checks/cppcoreguidelines/avoid-capturing-lambda-coroutines.html).
