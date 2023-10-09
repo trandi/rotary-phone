@@ -9,7 +9,6 @@
 #include <unifex/never.hpp>
 #include <unifex/range_stream.hpp>
 #include <unifex/transform_stream.hpp>
-#include <unifex/task.hpp>
 #include <unifex/just.hpp>
 #include <unifex/just_done.hpp>
 #include <unifex/sequence.hpp>
@@ -37,15 +36,6 @@ constexpr Pin PIN_DIAL_PULSE = 15; // Connector PIN 11
 constexpr Pin PIN_HOOK = 18; // Connector PIN 12
 
 namespace {
-
-/*
-timed_single_thread_context sleepExecutionContext;
-// returns a Sender that can be co_awaited in a task<>
-auto sleep(milliseconds ms) {
-  // schedule_after needs a TimedScheduler, which is not the one tasks use
-  return schedule_after(sleepExecutionContext.get_scheduler(), ms);
-}
-*/
 
 std::unordered_map<Pin, MicrosTick> lastCallback;
 bool debounce(Pin pin, MicrosTick tick) {
@@ -152,16 +142,15 @@ task<string> nextNumber() {
   numberReady.reset();
   co_return prevNumber;
 }
+*/
 
-
-unifex::type_erased_stream<std::string> numberStream() {
+unifex::type_erased_stream<std::string> Phone::numberStream() {
   return unifex::type_erase<std::string>(
     unifex::transform_stream(numberReady.stream(), []() {
       return prevNumber;
     })
   );
 }
-*/
 
 bool Phone::hookStatus() {
   return hook;
@@ -181,24 +170,3 @@ void Phone::hitBell(bool left) {
   }
 }
 
-/*
-task<void> ring(unsigned  count, unsigned freq) {
-  if (gpioWrite(PIN_RING_ENABLE, 1) != 0) {
-    cout << "ERROR enabling RING" << endl;
-  }
-
-  auto delayMs = milliseconds(1000 / freq / 2);
-  for (unsigned i=0; i<count; i++) {
-    gpioWrite(PIN_RING_LEFT, 0);
-    gpioWrite(PIN_RING_RIGHT, 1);
-    co_await sleep(delayMs);
-    gpioWrite(PIN_RING_LEFT, 1);
-    gpioWrite(PIN_RING_RIGHT, 0);
-    co_await sleep(delayMs);
-  }
-
-  if (gpioWrite(PIN_RING_ENABLE, 0) != 0) {
-    cout << "ERROR disabling RING" << endl;
-  }
-}
-*/

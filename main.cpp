@@ -3,7 +3,6 @@
 
 #include <iostream>
 #include <unifex/sync_wait.hpp>
-#include <unifex/task.hpp>
 #include <unifex/for_each.hpp>
 #include <unifex/sequence.hpp>
 #include <unifex/just.hpp>
@@ -18,77 +17,42 @@
 
 unifex::timed_single_thread_context ctx_;
 
-/*
-unifex::typed_sender auto  asyncMain(Subprocess* proc) {
-  Linphone linphone(proc);
-  
-  return linphone.monitorIncomingCalls(
-    
+unifex::sender auto asyncMain(std::shared_ptr<Phone> phone, Subprocess* proc) {
+  return unifex::let_value(
+    Linphone::create(proc),
+    [phone](auto linphone) {
+      return linphone->monitorIncomingCalls(
+        phone->ring(
+          20, // ring freq in Hz
+          [phone]() {
+            return !phone->hookStatus();
+          }
+        )
+      );
+    }
   );
-
 }
-*/
+
+
 int main() {
   auto phone = Phone::create();
-  unifex::v1::async_scope scope;
-  Subprocess proc(&scope);
-  Linphone linphone(&proc);
+  Subprocess proc;
 
-/*
   unifex::sync_wait(
-      ctx_.get_scheduler(), phone->ring(
-        20,
-        [ph = phone.get()]() {
-          return !ph->hookStatus();; 
-        }
-      ));
-
-
-*/
-  unifex::sync_wait(unifex::on(ctx_.get_scheduler(),
-    linphone.monitorIncomingCalls(
-      //unifex::just_from([]{std::cout << "RING ...." << std::endl; }), 
-      //unifex::on(ctx_.get_scheduler(), phone->ring(10, 20)),
-      phone->ring(
-        20,
-        [ph = phone.get()]() {
-          return !ph->hookStatus();; 
+    unifex::when_all(
+      unifex::on(
+        ctx_.get_scheduler(),
+        asyncMain(phone, &proc)
+      ),
+      unifex::for_each(
+        phone->numberStream(),
+        [](const std::string& number) {
+          // TODO actually DIAL it, rather than just printing
+          std::cout << "Number received: " << number << std::endl;
         }
       )
-    ))
-  );
-
-
-/*
-  scope.detached_spawn_on(
-    ctx.get_scheduler(), 
-    unifex::let_value(
-      linphone.monitorIncomingCalls(
-        unifex::just_from([](){std::cout << "RINGING !" << std::endl;}),//phone->ring(10, 20),
-        [&phone]() { return !phone->hookStatus(); }
-      ),
-      [](auto) { return unifex::just();}
     )
   );
-*/
-  unifex::sync_wait(scope.complete());
-
-
-  // unifex::sync_wait(unifex::on(ctx.get_scheduler(), ring(100, 20)));
-
-
-  // sync_wait(ring(100, 20));
-
-  //sync_wait(unifex::for_each(numberStream(), [](const string& number) {
-  //  cout << "Streamed Number: " << number << endl;
-  //}));
-
-  // sync_wait(ring(100, 20));
-
-  //while (true) {
-  //  sync_wait(getAndPrintNumber());
-  // }
-
 
   return 0;
 }

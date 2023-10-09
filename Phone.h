@@ -4,14 +4,15 @@
 #include <chrono>
 #include <memory>
 #include <iostream>
+#include <chrono>
 
-#include <unifex/task.hpp>
 #include <unifex/type_erased_stream.hpp>
 #include <unifex/sender_concepts.hpp>
 #include <unifex/sequence.hpp>
 #include <unifex/just_from.hpp>
 #include <unifex/repeat_effect_until.hpp>
 #include <unifex/scheduler_concepts.hpp>
+#include <unifex/let_done.hpp>
 #include <unifex/let_value.hpp>
 #include <unifex/timed_single_thread_context.hpp>
 #include <unifex/on.hpp>
@@ -24,47 +25,40 @@ class  Phone {
   void setBellMode(bool enable);
   void hitBell(bool left);
 
-  // TODO unused
-  unifex::timed_single_thread_context ctx_;
-
 public:
   // use factory method to ensure singleton 
-  // TODO use unique_ptr ??
   static std::shared_ptr<Phone> create();
-
+  // allow move
   Phone(Phone&&) = default;
   Phone& operator=(Phone&) = default;
 
-  // can't make constructor private as we want it to work with std::make_shared<> yet we want to force usage of static factory method
-  explicit Phone(NotPubliclyConstructible);
-  ~Phone();
-
-  // given that it controls GPIOs we can't have more than 1 single instance
+  // given that it controls GPIOs we can't have more than 1 single instance-> forbid copy
   Phone(const Phone&) = delete;
   Phone& operator=(const Phone&) = delete;
 
-  //unifex::task<void> ring(unsigned count, unsigned freq);
-  //unifex::type_erased_stream<std::string> numberStream();
-
+  // can't make constructor private due to std::make_shared<> yet we want to force usage of static factory method
+  explicit Phone(NotPubliclyConstructible);
+  ~Phone();
 
   bool hookStatus();
 
+  unifex::type_erased_stream<std::string> numberStream();
+
   // HAS to be run an a timed_single_thread_context (or similar) provided scheduler
   template <typename Predicate>
-  inline unifex::typed_sender auto ring(unsigned freq, Predicate until) {
-    auto delayMs = std::chrono::milliseconds(1000 / freq / 2);
+  inline auto ring(unsigned freqHz, Predicate until) {
+    auto delayMs = std::chrono::milliseconds(500 / freqHz); 
+
 
     auto one = unifex::sequence(  
       unifex::just_from([&] {
-        std::cout << "HitBell TRUE" << std::endl;
         hitBell(true);
       }),
-      unifex::schedule_after(unifex::current_scheduler, delayMs),
+      unifex::schedule_after(delayMs),
       unifex::just_from([&] {
-        std::cout<< "HitBell FALSE" << std::endl;
         hitBell(false);
       }),
-      unifex::schedule_after(unifex::current_scheduler, delayMs) 
+      unifex::schedule_after(delayMs) 
     );
 
     return unifex::sequence(
@@ -73,7 +67,7 @@ public:
         setBellMode(true);
       }),
       unifex::repeat_effect_until(
-        unifex::sequence(one, one, one, one, one, one),
+        one,
         until
       ),
       unifex::just_from([&] {

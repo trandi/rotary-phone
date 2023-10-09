@@ -14,14 +14,35 @@
 #include <unifex/timed_single_thread_context.hpp>
 #include <unifex/variant_sender.hpp>
 
-struct Linphone {
+class Linphone {
+  struct NotPubliclyConstructible{};
 
+public:
+  // returns sender<std::shared_ptr<Linphone>>
+  static unifex::sender auto create(Subprocess* proc) {
+    return unifex::then(  
+      proc->runCmd("linphonecsh init -c ./linphonerc"),
+      [&](const auto& startRes) {
+        std::cout << "Started linphone daemon: " << startRes << std::endl;
+        
+        return std::make_shared<Linphone>(NotPubliclyConstructible{}, proc);
+      }
+    );
+  }
 
-  explicit Linphone(Subprocess* proc);
+  // allow move
+  Linphone(Linphone&&) = default;
+  Linphone& operator=(Linphone&) = default;
+  // 1 single linphonec daemon so no copies
+  Linphone(const Linphone&) = delete;
+  Linphone& operator=(const Linphone&) = delete;
+
+  explicit Linphone(NotPubliclyConstructible, Subprocess* proc): proc_(proc) {}
+  ~Linphone() = default;
 
 
   // TODO 
-  inline unifex::typed_sender auto  makeCall(std::string_view destination) {
+  inline auto  makeCall(std::string_view destination) {
     std::string cmd = fmt::format("linphonec -s \"sip:{}\"", destination);
     std::cout << "Making call to: " << cmd << std::endl;
 
@@ -31,29 +52,24 @@ struct Linphone {
 
   // HAS to be run on a timed_single_thread or similar scheduler
   template <typename RingSender>
-  inline unifex::typed_sender auto monitorIncomingCalls(RingSender ringSender) {
-    auto delayMs = std::chrono::milliseconds(3000);
+  inline auto monitorIncomingCalls(RingSender ringSender) {
+    auto delayMs = std::chrono::milliseconds(1000);
     
     auto senderWhenCallIncoming = 
       unifex::then(
-        unifex::let_value(
           ringSender, // should stop when we're ready to answer
           [p = proc_]() {
             std::cout << "~~~~~~ 3" << std::endl;
-            return p->runCmd("linphonecsh generic 'answer'"); // actually answer
+            p->runCmd("linphonecsh generic 'answer'"); // actually answer
           }
-        ),
-        [](const auto& answerRes) {
-          std::cout << "~~~~~ 4: " << answerRes << std::endl;
-          // swallow returned value to make this a Sender<void>
-        }
       );
+
 
     return unifex::repeat_effect(
       unifex::sequence(
         unifex::let_value(
           proc_->runCmd("linphonecsh status hook"),
-          [&](const auto& statusRes) 
+          [senderWhenCallIncoming](const auto& statusRes) 
             -> unifex::variant_sender<decltype(unifex::just()), decltype(senderWhenCallIncoming)> {
             if(statusRes.find("Incoming call") != std::string::npos) {
               std::cout << "Incoming call detected... " << std::endl;
@@ -64,15 +80,12 @@ struct Linphone {
             }
           }
         ),
-        unifex::schedule_after(unifex::current_scheduler, delayMs)
+        unifex::schedule_after(delayMs) // wait a bit before repeating
       )
     );
   }
 
 
 private:
-
   Subprocess* proc_;
-  std::shared_ptr<FILE> daemonProcPipe_;
-  unifex::timed_single_thread_context ctx_;
 };

@@ -20,8 +20,6 @@
 
 struct Subprocess {
 
-  explicit Subprocess(unifex::v1::async_scope* scope): scope_(scope){
-  }
 
 /*
   // starts a command in the background and does NOT wait for it
@@ -39,7 +37,7 @@ struct Subprocess {
   // starts a command and waits for it to finish
   // returns the stdout from console
   // this HAS to be in the header to use return type deduction, which we have to
-  inline unifex::typed_sender auto runCmd(const std::string& cmd) {
+  inline auto runCmd(const std::string& cmd) {
     return unifex::just_from([cmd]() {
       return Subprocess::exec(cmd.data());
     });
@@ -66,10 +64,5 @@ private:
 
     return res;
   }
-
-  
-  // TODO delete these as unused
-  unifex::new_thread_context ctx_;
-  unifex::v1::async_scope* scope_;
 
 };
