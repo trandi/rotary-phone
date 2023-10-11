@@ -17,21 +17,41 @@
 
 unifex::timed_single_thread_context ctx_;
 
+
+auto incomingCalls(std::shared_ptr<Phone> phone, std::shared_ptr<Linphone> linphone) {
+  return linphone->monitorIncomingCalls(
+    phone->ring(
+      20, // ring freq in Hz
+      15, // max no of rings
+      [phone]() { // returns if call is currently answered or not
+        return !phone->hookStatus();
+      }
+    )
+  );
+}
+
+auto outgoingCalls(std::shared_ptr<Phone> phone, std::shared_ptr<Linphone> linphone) {
+  return unifex::for_each(
+    phone->numberStream(),
+    [](const std::string& number) {
+      // TODO actually DIAL it, rather than just printing
+      std::cout << "Number received: " << number << std::endl;
+    }
+  );
+}
+
 unifex::sender auto asyncMain(std::shared_ptr<Phone> phone, Subprocess* proc) {
   return unifex::let_value(
     Linphone::create(proc),
-    [phone](auto linphone) {
-      return linphone->monitorIncomingCalls(
-        phone->ring(
-          20, // ring freq in Hz
-          [phone]() {
-            return !phone->hookStatus();
-          }
-        )
+    [phone](auto& linphone) {
+      return unifex::when_all(
+        incomingCalls(phone, linphone),
+        outgoingCalls(phone, linphone)
       );
     }
   );
 }
+
 
 
 int main() {
@@ -39,18 +59,9 @@ int main() {
   Subprocess proc;
 
   unifex::sync_wait(
-    unifex::when_all(
-      unifex::on(
-        ctx_.get_scheduler(),
-        asyncMain(phone, &proc)
-      ),
-      unifex::for_each(
-        phone->numberStream(),
-        [](const std::string& number) {
-          // TODO actually DIAL it, rather than just printing
-          std::cout << "Number received: " << number << std::endl;
-        }
-      )
+    unifex::on(
+      ctx_.get_scheduler(),
+      asyncMain(phone, &proc)
     )
   );
 

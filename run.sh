@@ -2,7 +2,9 @@
 
 #g++ -Wall -pthread -std=c++20 -fconcepts-diagnostics-depth=3 -o phone Linphone.cpp Phone.cpp main.cpp -lfmt -lpigpio -lrt -lunifex 
 
-clang++ -Wall -pthread -std=c++20 -o phone Phone.cpp main.cpp -lfmt -lpigpio -lrt -lunifex 
+if [ $1 = 'build' ]; then
+  clang++ -Wall -pthread -std=c++20 -o phone Phone.cpp main.cpp -lfmt -lpigpio -lrt -lunifex 
+fi
 
 # kill previous process if necessary
 # sudo kill -9 $(sudo netstat -ltnpa | grep 8888 | awk '{split($7,a,"/"); print a[1];}')

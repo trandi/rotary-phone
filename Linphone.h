@@ -51,16 +51,30 @@ public:
 
 
   // HAS to be run on a timed_single_thread or similar scheduler
+  // RingSender needs to be a Sender<bool>
   template <typename RingSender>
   inline auto monitorIncomingCalls(RingSender ringSender) {
     auto delayMs = std::chrono::milliseconds(1000);
+
+    // unifex::sender<void>
+    auto answerCmdSender = unifex::then(
+      proc_->runCmd("linphonecsh generic 'answer'"),
+      [](const auto& statusRes) {
+        std::cout << "Answered: " << statusRes << std::endl;
+      }
+    );
     
     auto senderWhenCallIncoming = 
-      unifex::then(
-          ringSender, // should stop when we're ready to answer
-          [p = proc_]() {
-            std::cout << "~~~~~~ 3" << std::endl;
-            p->runCmd("linphonecsh generic 'answer'"); // actually answer
+      unifex::let_value(
+          ringSender, // should return a bool indicating if it was answered or not
+          [answerCmdSender](const bool& answered)
+            -> unifex::variant_sender<decltype(unifex::just()), decltype(answerCmdSender)> {
+            std::cout << "Ring finished: " << answered << std::endl;
+            if(answered) {
+              return answerCmdSender; // actually answer
+            } else {
+              return unifex::just(); // do nothing
+            }
           }
       );
 
@@ -75,8 +89,7 @@ public:
               std::cout << "Incoming call detected... " << std::endl;
               return senderWhenCallIncoming; 
             } else {
-              // if no incoming call, do nothing
-              return unifex::just();
+              return unifex::just(); // no incoming call, do nothing
             }
           }
         ),

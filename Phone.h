@@ -14,6 +14,7 @@
 #include <unifex/scheduler_concepts.hpp>
 #include <unifex/let_done.hpp>
 #include <unifex/let_value.hpp>
+#include <unifex/let_value_with.hpp>
 #include <unifex/timed_single_thread_context.hpp>
 #include <unifex/on.hpp>
 
@@ -45,10 +46,10 @@ public:
   unifex::type_erased_stream<std::string> numberStream();
 
   // HAS to be run an a timed_single_thread_context (or similar) provided scheduler
+  // returns a Sender<bool> (ie. if it was answered or reached max rings)
   template <typename Predicate>
-  inline auto ring(unsigned freqHz, Predicate until) {
+  inline auto ring(unsigned freqHz, unsigned maxCount, Predicate answered) {
     auto delayMs = std::chrono::milliseconds(500 / freqHz); 
-
 
     auto one = unifex::sequence(  
       unifex::just_from([&] {
@@ -60,20 +61,32 @@ public:
       }),
       unifex::schedule_after(delayMs) 
     );
-
+  
     return unifex::sequence(
       unifex::just_from([&] {
         std::cout << "Started Ringing..." << std::endl;
         setBellMode(true);
       }),
-      unifex::repeat_effect_until(
-        one,
-        until
-      ),
-      unifex::just_from([&] {
-        std::cout << "Stopped Ringing" << std::endl;
-        setBellMode(false);
-      })
+      unifex::let_value_with(
+        [maxCount]() {
+          return std::make_unique<int>(maxCount);
+        },
+        [answered, one, this](auto& count) { 
+          return unifex::then(
+            unifex::repeat_effect_until(
+              one,
+              [answered, &count]() {
+                return answered() || (--(*count) == 0);
+              }
+            ),
+            [&count, this]() {
+              std::cout << "Stopped Ringing" << std::endl;
+              setBellMode(false);
+              return (*count) != 0; // means it was answered rather than timed out
+            }
+          );
+        }
+      )
     );
   }
 
