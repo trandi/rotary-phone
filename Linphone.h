@@ -13,93 +13,152 @@
 #include <unifex/any_sender_of.hpp>
 #include <unifex/timed_single_thread_context.hpp>
 #include <unifex/variant_sender.hpp>
+#include <unifex/async_auto_reset_event.hpp>
+#include <unifex/transform_stream.hpp>
 
 class Linphone {
+public:
+  enum class Event {
+    INCOMING_CALL,
+    REMOTE_ANSWER,
+    REMOTE_HANGUP
+  };
+
+
+private:
   struct NotPubliclyConstructible{};
+
+  unifex::async_auto_reset_event statusChange_;
+  Event lastEvent_{Event::REMOTE_HANGUP}; 
+  std::string incomingCallFrom_{""};
+
+  std::shared_ptr<Subprocess> proc_;
+  unifex::async_scope backgroundScope_;
+
+  unifex::sender auto handleEvents() {
+    auto checkOnce = unifex::then(
+      proc_->runCmd("linphonecsh status hook"),     
+      [&](const std::string statusRes) {
+        std::string_view status(statusRes);
+        std::cout << "Linphone status: " << status << std::endl;
+        if(lastEvent_ != Event::INCOMING_CALL && status.starts_with("Incoming call")) {
+          lastEvent_ = Event::INCOMING_CALL;
+          statusChange_.set();
+        } else if(lastEvent_ != Event::REMOTE_ANSWER && status.starts_with("hook=answwered")) {
+          lastEvent_ = Event::REMOTE_ANSWER;
+          statusChange_.set();
+        } else if(lastEvent_ != Event::REMOTE_HANGUP && status.starts_with("hook=on-hook")) {
+          lastEvent_ = Event::REMOTE_HANGUP;
+          statusChange_.set();
+        }
+      }
+    );
+
+    // infinite loop
+    return unifex::repeat_effect(
+      unifex::sequence(
+        checkOnce,
+        // wait a bit before checking again
+        unifex::schedule_after(std::chrono::milliseconds(1000))
+      )
+    ); 
+  }
+
 
 public:
   // returns sender<std::shared_ptr<Linphone>>
-  static unifex::sender auto create(Subprocess* proc) {
+  template <typename Scheduler>
+    requires unifex::scheduler<Scheduler>
+  static unifex::sender auto create(std::shared_ptr<Subprocess> proc, Scheduler&& scheduler) {
     return unifex::then(  
       proc->runCmd("linphonecsh init -c ./linphonerc"),
       [&](const auto& startRes) {
         std::cout << "Started linphone daemon: " << startRes << std::endl;
         
-        return std::make_shared<Linphone>(NotPubliclyConstructible{}, proc);
+        return std::make_shared<Linphone>(
+          NotPubliclyConstructible{}, 
+          std::move(proc), 
+          std::forward<Scheduler>(scheduler)
+        );
       }
     );
   }
 
-  // allow move
-  Linphone(Linphone&&) = default;
-  Linphone& operator=(Linphone&) = default;
-  // 1 single linphonec daemon so no copies
+  // don't allow move or copy 
+  Linphone(Linphone&&) = delete;
+  Linphone& operator=(Linphone&) = delete;
   Linphone(const Linphone&) = delete;
   Linphone& operator=(const Linphone&) = delete;
 
-  explicit Linphone(NotPubliclyConstructible, Subprocess* proc): proc_(proc) {}
+  template <typename Scheduler>
+  requires unifex::scheduler<Scheduler> //has to be Timed scheduler
+  explicit Linphone(
+    NotPubliclyConstructible, 
+    std::shared_ptr<Subprocess> proc, 
+    Scheduler&& scheduler): proc_(std::move(proc)) 
+  {
+    // BACKGROUND tasks
+    backgroundScope_.detached_spawn_on(
+      std::forward<Scheduler>(scheduler),
+      handleEvents()
+    ); 
+  }
+
   ~Linphone() = default;
 
+  // async cleanup
+  unifex::sender auto cleanup() {
+    return backgroundScope_.cleanup();
+  }
 
-  // TODO 
-  inline auto  makeCall(std::string_view destination) {
-    std::string cmd = fmt::format("linphonec -s \"sip:{}\"", destination);
+  ////////////   API   /////////////////////
+
+  // ACTIONS
+  unifex::sender auto dial(std::string_view destination) {
+    std::string cmd = fmt::format("linphonecsh dial \"sip:{}\"", destination);
     std::cout << "Making call to: " << cmd << std::endl;
 
     return proc_->runCmd(cmd);
   }
 
-
-  // HAS to be run on a timed_single_thread or similar scheduler
-  // RingSender needs to be a Sender<bool>
-  template <typename RingSender>
-  inline auto monitorIncomingCalls(RingSender ringSender) {
-    auto delayMs = std::chrono::milliseconds(1000);
-
-    // unifex::sender<void>
-    auto answerCmdSender = unifex::then(
-      proc_->runCmd("linphonecsh generic 'answer'"),
-      [](const auto& statusRes) {
-        std::cout << "Answered: " << statusRes << std::endl;
-      }
-    );
-
-    // has to be unifex::sender<void> so that we can use it in unifex::repeat_effect  
-    auto senderWhenCallIncoming = 
-      unifex::let_value(
-          ringSender, // should return a bool indicating if it was answered or not
-          [answerCmdSender](const bool& answered)
-            -> unifex::variant_sender<decltype(unifex::just()), decltype(answerCmdSender)> {
-            std::cout << "Ring finished: " << answered << std::endl;
-            if(answered) {
-              return answerCmdSender; // actually answer
-            } else {
-              return unifex::just(); // do nothing
-            }
-          }
-      );
-
-
-    return unifex::repeat_effect(
-      unifex::sequence(
-        unifex::let_value(
-          proc_->runCmd("linphonecsh status hook"),
-          [senderWhenCallIncoming](const auto& statusRes) 
-            -> unifex::variant_sender<decltype(unifex::just()), decltype(senderWhenCallIncoming)> {
-            if(statusRes.find("Incoming call") != std::string::npos) {
-              std::cout << "Incoming call detected... " << std::endl;
-              return senderWhenCallIncoming; 
-            } else {
-              return unifex::just(); // no incoming call, do nothing
-            }
-          }
-        ),
-        unifex::schedule_after(delayMs) // wait a bit before repeating
-      )
-    );
+  unifex::sender auto hangUp() {
+    std::cout << "Terminate call" << std::endl;
+    return proc_->runCmd("linphonecsh generic 'terminate'");
   }
 
+  unifex::sender auto answer() {
+    std::cout << "Answering call" << std::endl;
+    return proc_->runCmd("linphonecsh generic 'answer'");
+  } 
 
-private:
-  Subprocess* proc_;
+
+  // EVENTS
+  unifex::type_erased_stream<Event> eventStream() {
+    return unifex::type_erase<Event>(
+      unifex::transform_stream(statusChange_.stream(), [&] {
+        return lastEvent_;
+      })
+    );
+  }  
+
+
+  /////////////////////////////////////
+
 };
+
+
+
+std::ostream& operator<<(std::ostream& os, const Linphone::Event& event) {
+  switch (event) {
+    case Linphone::Event::INCOMING_CALL:
+      os << "INCOMING_CALL";
+      break;
+    case Linphone::Event::REMOTE_ANSWER:
+      os << "REMOTE_ANSWER";
+      break;
+    case Linphone::Event::REMOTE_HANGUP:
+      os << "REMOTE_HANGUP";
+      break;
+  }
+  return os;
+}

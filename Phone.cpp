@@ -45,15 +45,18 @@ bool debounce(Pin pin, MicrosTick tick) {
   return tick - prevTick > 10000;
 }
 
-unsigned currentDigit;
+unsigned currentDigit, prevDigit;
 std::string currentNumber, prevNumber;
-unifex::async_auto_reset_event numberReady;
+unifex::async_auto_reset_event digitReady, numberReady;
 
 void pulseCallback(Pin gpio, int level, MicrosTick tick) {
   if(debounce(gpio, tick)) {
     if(gpio == PIN_DIAL_ENABLE) {
       if(level) {
-        currentNumber += std::to_string(currentDigit); 
+        // just obtained a new digit
+        prevDigit = currentDigit;
+        currentNumber += std::to_string(prevDigit);
+        digitReady.set();
       } else {
         currentDigit = 0;
       }
@@ -76,9 +79,12 @@ void buttonCallback(Pin gpio, int level, MicrosTick tick) {
 } 
 
 bool hook{true}; //HAS to start with the hook in place
+unifex::async_auto_reset_event hookStatusChange;
+
 void hookCallback(Pin gpio, int level, MicrosTick tick) {
   if(debounce(gpio, tick)) {
     hook = level;
+    hookStatusChange.set();
     std::cout << "Hook: " << (hook ? "true" : "false") << std::endl;
   }
 }
@@ -86,15 +92,11 @@ void hookCallback(Pin gpio, int level, MicrosTick tick) {
 } // namespace
 
 
-/*static*/ std::shared_ptr<Phone> Phone::create() {
-  static auto instance_ = std::make_shared<Phone>(NotPubliclyConstructible()); 
-  
-  return instance_;
-}
 
-Phone::Phone(Phone::NotPubliclyConstructible) {
-  std::cout << "Phone STARTING" << std::endl;
+///////////  PhoneHelper //////////
 
+
+/*static*/ void Phone::hardwareSetup() {
   std::cout << "PiGPIO initialisation, version: " << gpioInitialise() << std::endl;
 
   std::cout << "Configure RING: " << (
@@ -126,41 +128,18 @@ Phone::Phone(Phone::NotPubliclyConstructible) {
     gpioSetPullUpDown(PIN_HOOK, PI_PUD_UP) == 0 &&
     gpioSetAlertFunc(PIN_HOOK, hookCallback) == 0
     ? "success" : "failure") << std::endl;
-
 }
 
-Phone::~Phone() {
-  std::cout << "Phone DESTRUCTOR" << std::endl;
+/*static*/ void Phone::hardwareTerminate() {
   gpioTerminate();
 }
 
-/*
-// alternative using a async_manual_reset_event 
-task<string> nextNumber() {
-  // TODO why the heck doesn't it use the scheduler from the task !??
-  co_await on(sleepExecutionContext.get_scheduler(), numberReady.async_wait());
-  numberReady.reset();
-  co_return prevNumber;
-}
-*/
 
-unifex::type_erased_stream<std::string> Phone::numberStream() {
-  return unifex::type_erase<std::string>(
-    unifex::transform_stream(numberReady.stream(), []() {
-      return prevNumber;
-    })
-  );
-}
-
-bool Phone::hookStatus() {
-  return hook;
-}
-
-void Phone::setBellMode(bool enabled) {
+/*static*/ void Phone::setBellMode(bool enabled) {
   gpioWrite(PIN_RING_ENABLE, enabled);
 }
 
-void Phone::hitBell(bool left) {
+/*static*/ void Phone::hitBell(bool left) {
   if(left) {
     gpioWrite(PIN_RING_LEFT, 1);
     gpioWrite(PIN_RING_RIGHT,0);
@@ -170,3 +149,27 @@ void Phone::hitBell(bool left) {
   }
 }
 
+
+/*static*/ unifex::type_erased_stream<bool> Phone::hookStateStream() {
+  return unifex::type_erase<bool>(
+    unifex::transform_stream(hookStatusChange.stream(), []() {
+      return hook;
+    })
+  );
+}
+
+/*static*/ unifex::type_erased_stream<unsigned> Phone::digitStream() {
+  return unifex::type_erase<unsigned>(
+    unifex::transform_stream(digitReady.stream(), []() {
+      return prevDigit;
+    })
+  );
+}
+
+/*static*/ unifex::type_erased_stream<std::string> Phone::numberStream() {
+  return unifex::type_erase<std::string>(
+    unifex::transform_stream(numberReady.stream(), []() {
+      return prevNumber;
+    })
+  );
+}
