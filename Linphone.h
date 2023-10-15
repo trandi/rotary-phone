@@ -63,7 +63,8 @@ public:
         std::cout << "Answered: " << statusRes << std::endl;
       }
     );
-    
+
+    // has to be unifex::sender<void> so that we can use it in unifex::repeat_effect  
     auto senderWhenCallIncoming = 
       unifex::let_value(
           ringSender, // should return a bool indicating if it was answered or not
