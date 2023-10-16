@@ -173,3 +173,18 @@ void hookCallback(Pin gpio, int level, MicrosTick tick) {
     })
   );
 }
+
+
+void Phone::ring(bool on) {
+  ringing_ = on;
+}
+
+void Phone::playTone(Phone::Tone tone) {
+  std::cout << "Play TONE: " << tone << std::endl;
+}
+
+
+std::ostream& operator<<(std::ostream& os, Phone::Tone tone) {
+  os << (tone == Phone::Tone::NONE ? "NONE" : (tone == Phone::Tone::CONTINUOUS ? "CONTINUOUS" : "INTERMITENT"));
+  return os;
+}

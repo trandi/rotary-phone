@@ -53,20 +53,25 @@ std::ostream& operator<<(std::ostream& os, const State& state) {
 }
 
 
+void printIgnore(std::shared_ptr<State> state, Linphone::Event event) {
+  std::cout << "Ignored | state: " << (*state) << " / Event: " << event << std::endl;
+};
+
+void printIgnore(std::shared_ptr<State> state, bool onHook) {
+  std::cout << "Ignored | state: " << (*state) << " / Phone Hook status: " 
+    << (onHook ? "true" : "false") << std::endl;
+};
+
+/////////////////  STATE MACHINE logic //////////////
 
 unifex::sender auto monitorLinphoneEvents(
   std::shared_ptr<Phone> phone, 
   std::shared_ptr<Linphone> linphone, 
   std::shared_ptr<State> state
 ) {
-
-  auto printIgnore = [state](Linphone::Event event) {
-    std::cout << "Ignore | state: " << (*state) << " / Event: " << event << std::endl;
-  };
-
   return unifex::for_each(
     linphone->eventStream(),
-    [state, phone, printIgnore](const auto event) {
+    [state, phone](const auto event) {
       switch (*state) {
         case State::ON_HOOK_WAITING:
           switch (event) {
@@ -75,7 +80,7 @@ unifex::sender auto monitorLinphoneEvents(
               phone->ring(true);
               break;
             default:
-              printIgnore(event);
+              printIgnore(state, event);
           }
           break;
   
@@ -85,7 +90,7 @@ unifex::sender auto monitorLinphoneEvents(
               *state = State::ON_HOOK_WAITING;
               phone->ring(false);
             default:
-              printIgnore(event);
+              printIgnore(state, event);
           }
           break;
 
@@ -99,7 +104,7 @@ unifex::sender auto monitorLinphoneEvents(
               phone->playTone(Phone::Tone::INTERMITENT);
               break;
             default:
-              printIgnore(event);
+              printIgnore(state, event);
           }
           break;
 
@@ -110,19 +115,57 @@ unifex::sender auto monitorLinphoneEvents(
               phone->playTone(Phone::Tone::INTERMITENT);
               break;
             default:
-              printIgnore(event);
+              printIgnore(state, event);
           }
           break;
 
         default:
-          printIgnore(event);
+          printIgnore(state, event);
       }              
     }
   );
 }
 
 
+unifex::sender auto monitorPhoneHookEvents(
+  std::shared_ptr<Phone> phone,
+  std::shared_ptr<Linphone> linphone,
+  std::shared_ptr<State> state
+) {
+  return unifex::for_each(
+    phone->hookStateStream(),
+    [state, phone, linphone] (const bool onHook) {
+      if(onHook) {
+        switch(*state) {
+          case State::OFF_HOOK_WAITING_NO:
+            *state = State::ON_HOOK_WAITING;
+            phone->playTone(Phone::Tone::NONE);
+            break;
 
+          case State::OFF_HOOK_WAITING_REMOTE:
+            *state = State::ON_HOOK_WAITING;
+            linphone->hangUp();
+            break;
+
+          case State::OFF_HOOK_ERROR:
+            *state = State::ON_HOOK_WAITING;
+            phone->playTone(Phone::Tone::NONE);
+            break;
+
+          default:
+            printIgnore(state, onHook);
+        }
+      } else if(*state == State::ON_HOOK_WAITING) {
+        *state = State::OFF_HOOK_WAITING_NO;
+        phone->playTone(Phone::Tone::CONTINUOUS);
+      } else {
+        printIgnore(state, onHook);
+      }
+    } 
+  ); 
+}
+
+/////////////////////////////////////////////////////////
 
 
 template <typename Scheduler>
@@ -136,11 +179,15 @@ unifex::sender auto asyncMain(
   return unifex::let_value(
     Linphone::create(proc, std::forward<Scheduler>(scheduler)),
     [phone, state](auto& linphone) {
-      return unifex::sequence(
-        //unifex::when_all( // run in parallel
+      return unifex::let_value(
+        unifex::when_all( // run in parallel
           monitorLinphoneEvents(phone, linphone, state),
-        //),
-        linphone->cleanup()
+          monitorPhoneHookEvents(phone, linphone, state)
+        ),
+        [linphone] (auto& ...) {
+          // need to swallow/ignore the result from when_all
+          return linphone->cleanup();
+        }
       );
     }
   );

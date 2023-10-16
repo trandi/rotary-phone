@@ -30,10 +30,14 @@ private:
 
   unifex::async_auto_reset_event statusChange_;
   Event lastEvent_{Event::REMOTE_HANGUP}; 
-  std::string incomingCallFrom_{""};
+
+  unifex::async_manual_reset_event actionCmdEvent_;
+  std::string actionCmd_;
 
   std::shared_ptr<Subprocess> proc_;
   unifex::async_scope backgroundScope_;
+
+  
 
   unifex::sender auto handleEvents() {
     auto checkOnce = unifex::then(
@@ -62,6 +66,31 @@ private:
         unifex::schedule_after(std::chrono::milliseconds(1000))
       )
     ); 
+  }
+
+
+  unifex::sender auto handleActions() {
+    // sender<std::string>
+    auto waitAndRunCmd = unifex::let_value(
+      actionCmdEvent_.async_wait(), // wait for command to arrive
+      [&] {
+        auto cmd = actionCmd_;
+        actionCmdEvent_.reset();
+        return proc_->runCmd(cmd);
+      }
+    );
+
+
+    // infinite loop
+    return unifex::repeat_effect(
+      // map to sender<void> to please repeat_effect
+      unifex::then(
+        waitAndRunCmd,
+        [](const auto& res) {
+          // swallow the result
+        } 
+      )
+    );
   }
 
 
@@ -102,6 +131,11 @@ public:
       std::forward<Scheduler>(scheduler),
       handleEvents()
     ); 
+
+    backgroundScope_.detached_spawn_on(
+      std::forward<Scheduler>(scheduler),
+      handleActions()
+    );
   }
 
   ~Linphone() = default;
@@ -114,21 +148,24 @@ public:
   ////////////   API   /////////////////////
 
   // ACTIONS
-  unifex::sender auto dial(std::string_view destination) {
+  void dial(std::string_view destination) {
     std::string cmd = fmt::format("linphonecsh dial \"sip:{}\"", destination);
     std::cout << "Making call to: " << cmd << std::endl;
 
-    return proc_->runCmd(cmd);
+    actionCmd_ = cmd;
+    actionCmdEvent_.set();
   }
 
-  unifex::sender auto hangUp() {
+  void hangUp() {
     std::cout << "Terminate call" << std::endl;
-    return proc_->runCmd("linphonecsh generic 'terminate'");
+    actionCmd_ = "linphonecsh generic 'terminate'";
+    actionCmdEvent_.set();
   }
 
-  unifex::sender auto answer() {
+  void answer() {
     std::cout << "Answering call" << std::endl;
-    return proc_->runCmd("linphonecsh generic 'answer'");
+    actionCmd_ = "linphonecsh generic 'answer'";
+    actionCmdEvent_.set();
   } 
 
 

@@ -54,7 +54,7 @@ class  Phone {
     auto waitAndRingUntilStopped = unifex::sequence(
       // wait until asked to ring
       unifex::repeat_effect_until(
-        unifex::schedule_after(std::chrono::milliseconds(100)),
+        unifex::schedule_after(std::chrono::milliseconds(10)),
         [&]() {
           return ringing_;
         }
@@ -139,12 +139,9 @@ public:
   /////////// API //////////////////////
 
   // ACTIONS
-  void ring(bool on) {
-    ringing_ = on;
-  }
-
-  void playTone(Tone tone) {
-  }
+  void ring(bool on);
+  
+  void playTone(Tone tone);
   
   
   // EVENTS
@@ -160,3 +157,4 @@ public:
 }; // Phone
 
 
+std::ostream& operator<<(std::ostream& os, Phone::Tone tone);
