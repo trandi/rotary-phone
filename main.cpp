@@ -152,17 +152,66 @@ unifex::sender auto monitorPhoneHookEvents(
             phone->playTone(Phone::Tone::NONE);
             break;
 
+          case State::ACTIVE_CALL:
+            *state = State::ON_HOOK_WAITING;
+            linphone->hangUp();
+            break;
+
           default:
             printIgnore(state, onHook);
         }
-      } else if(*state == State::ON_HOOK_WAITING) {
-        *state = State::OFF_HOOK_WAITING_NO;
-        phone->playTone(Phone::Tone::CONTINUOUS);
       } else {
-        printIgnore(state, onHook);
+        switch(*state) {
+          case State::ON_HOOK_WAITING:
+            *state = State::OFF_HOOK_WAITING_NO;
+            phone->playTone(Phone::Tone::CONTINUOUS);
+            break;
+
+          case State::ON_HOOK_RINGING:
+            *state = State::ACTIVE_CALL;
+            phone->ring(false);
+            linphone->answer();
+            break;
+
+          default:
+            printIgnore(state, onHook);
+        }
       }
     } 
   ); 
+}
+
+
+// all it does is stop playing a tone when user starts dialling
+unifex::sender auto monitorDigitEvents(
+  std::shared_ptr<Phone> phone,
+  std::shared_ptr<State> state
+) {
+  return unifex::for_each(
+    phone->digitStream(),
+    [state, phone] (const unsigned /*digit*/) {
+      if( *state == State::OFF_HOOK_WAITING_NO) {
+        phone->playTone(Phone::Tone::NONE);
+      }
+    } 
+  );
+}
+
+
+unifex::sender auto monitorNumberEvents(
+  std::shared_ptr<Phone> phone,
+  std::shared_ptr<Linphone> linphone,
+  std::shared_ptr<State> state
+) {
+  return unifex::for_each(
+    phone->numberStream(),
+    [state, linphone] (const std::string& number) {
+      if( *state == State::OFF_HOOK_WAITING_NO) {
+        *state = State::OFF_HOOK_WAITING_REMOTE;
+        linphone->dial(number);
+      }
+    }
+  );
 }
 
 /////////////////////////////////////////////////////////
@@ -182,7 +231,9 @@ unifex::sender auto asyncMain(
       return unifex::let_value(
         unifex::when_all( // run in parallel
           monitorLinphoneEvents(phone, linphone, state),
-          monitorPhoneHookEvents(phone, linphone, state)
+          monitorPhoneHookEvents(phone, linphone, state),
+          monitorDigitEvents(phone, state),
+          monitorNumberEvents(phone, linphone, state)
         ),
         [linphone] (auto& ...) {
           // need to swallow/ignore the result from when_all

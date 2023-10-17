@@ -49,7 +49,7 @@ private:
   static std::string exec(const std::string& cmd) {
     // program needs to run as root because of PIGPIO, make sure that commands run as pi
     std::string actualCmd = "su pi -c '" + cmd + "'";
-    std::cout << "Popen cmd and wait for output: " << actualCmd << std::endl;
+    // std::cout << "Popen cmd and wait for output: " << actualCmd << std::endl;
     std::shared_ptr<FILE> pipe(popen(actualCmd.data(), "r"), pclose);
 
     std::string res("");
