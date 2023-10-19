@@ -17,17 +17,13 @@
 #include <unifex/let_value_with.hpp>
 #include <unifex/timed_single_thread_context.hpp>
 #include <unifex/on.hpp>
+#include <unifex/defer.hpp>
 #include <unifex/v1/async_scope.hpp>
 
+#include "Sounds.h"
 
-class  Phone {
+class Phone {
   struct NotPubliclyConstructible{};
-
-  unsigned freqHz_;
-  bool ringing_{false};
-
-  unifex::async_scope backgroundScope_;
-
 
   static void hardwareSetup();
   static void hardwareTerminate();
@@ -35,7 +31,6 @@ class  Phone {
   static void hitBell(bool left);
  
   // HAS to be run an a timed_single_thread_context (or similar) provided scheduler
-  // returns a Sender<bool> (ie. if it was answered or reached max rings)
   unifex::sender auto handleRinging() {
     if(freqHz_ < 10 || freqHz_ > 50) throw std::runtime_error("Use a valid ring frequency !!!");
     auto delayMs = std::chrono::milliseconds(500 / freqHz_); 
@@ -85,14 +80,80 @@ class  Phone {
     );
  } 
 
+
+
+  // HAS to be run an a timed_single_thread_context (or similar) provided scheduler
+  unifex::sender auto handleTonePlaying() {
+    auto continuousToneSender = unifex::sequence(
+      unifex::just_from([&] {
+        sound_->pcm->playTone(440, 50);
+      }),
+      // add a short delay as above uses 100%CPU and we need to give time to other tasks 
+      unifex::schedule_after(std::chrono::milliseconds(5))
+    );
+
+    auto intermitentToneSender = unifex::sequence(
+      unifex::just_from([&] {
+        sound_->pcm->playTone(500, 400);
+      }),
+      unifex::schedule_after(std::chrono::milliseconds(400))
+    );
+
+
+    auto waitAndPlayUntilStopped = unifex::sequence(
+      // wait until asked to play a tone
+      unifex::repeat_effect_until(
+        unifex::schedule_after(std::chrono::milliseconds(10)),
+        [&] {
+          return tone_ != Tone::NONE;
+        }
+      ),
+
+      unifex::just_from([&] {
+        sound_->mixer->setVolume(3);
+        sound_->pcm->open();
+      }),
+
+      unifex::repeat_effect_until(
+        unifex::defer([this, continuousToneSender, intermitentToneSender] () ->
+           unifex::variant_sender<decltype(continuousToneSender), decltype(intermitentToneSender)> {
+          if (tone_ == Tone::CONTINUOUS) {
+            return continuousToneSender;
+          } else {
+            return  intermitentToneSender;
+          }
+        }),
+        [&] {
+          return tone_ == Tone::NONE;
+        }
+      ),
+  
+      unifex::just_from([&] {
+        sound_->pcm->close();
+      })
+    );
+
+    // infinite loop
+    return unifex::repeat_effect(
+      waitAndPlayUntilStopped
+    ); 
+  }
+
+
+
 public:
   // use factory method to ensure singleton 
   template <typename Scheduler>
     requires unifex::scheduler<Scheduler> // has to be TIMED scheduler
-  static std::shared_ptr<Phone> create(unsigned freqHz, Scheduler&& scheduler) {
+  static std::shared_ptr<Phone> create(
+    unsigned freqHz,
+    std::shared_ptr<Sound> sound, 
+    Scheduler&& scheduler
+  ) {
     static auto instance_ = std::make_shared<Phone>(
       NotPubliclyConstructible(), 
-      freqHz, 
+      freqHz,
+      std::move(sound), 
       std::forward<Scheduler>(scheduler)
     );
 
@@ -109,14 +170,24 @@ public:
   // can't make constructor private due to std::make_shared<> yet we want to force usage of static factory method
   template <typename Scheduler>
     requires unifex::scheduler<Scheduler> // has to be TIMED scheduler
-  explicit Phone(NotPubliclyConstructible, unsigned freqHz, Scheduler&& scheduler): freqHz_(freqHz) {
+  explicit Phone(
+    NotPubliclyConstructible, 
+    unsigned freqHz, 
+    std::shared_ptr<Sound> sound, 
+    Scheduler&& scheduler
+  ): freqHz_(freqHz), sound_(std::move(sound)) {
     hardwareSetup();
 
     // BACKGROUND tasks
     backgroundScope_.detached_spawn_on(
       std::forward<Scheduler>(scheduler),
       handleRinging()
-    );  
+    );
+  
+    backgroundScope_.detached_spawn_on(
+      std::forward<Scheduler>(scheduler),
+      handleTonePlaying()
+    );
   }
 
   ~Phone() {
@@ -153,6 +224,16 @@ public:
 
 /////////////////////////////////////
 
+
+private:
+
+  unsigned freqHz_;
+  bool ringing_{false};
+  Tone tone_{Tone::NONE};
+
+  unifex::async_scope backgroundScope_;
+
+  std::shared_ptr<Sound> sound_;
 
 }; // Phone
 

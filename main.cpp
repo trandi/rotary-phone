@@ -71,7 +71,7 @@ unifex::sender auto monitorLinphoneEvents(
 ) {
   return unifex::for_each(
     linphone->eventStream(),
-    [state, phone](const auto event) {
+    [state, phone, linphone](const auto event) {
       switch (*state) {
         case State::ON_HOOK_WAITING:
           switch (event) {
@@ -89,6 +89,15 @@ unifex::sender auto monitorLinphoneEvents(
             case Linphone::Event::REMOTE_HANGUP:
               *state = State::ON_HOOK_WAITING;
               phone->ring(false);
+            default:
+              printIgnore(state, event);
+          }
+          break;
+
+        case State::OFF_HOOK_WAITING_NO:
+          switch (event) {
+            case Linphone::Event::INCOMING_CALL:
+              linphone->hangUp();
             default:
               printIgnore(state, event);
           }
@@ -136,30 +145,11 @@ unifex::sender auto monitorPhoneHookEvents(
     phone->hookStateStream(),
     [state, phone, linphone] (const bool onHook) {
       if(onHook) {
-        switch(*state) {
-          case State::OFF_HOOK_WAITING_NO:
-            *state = State::ON_HOOK_WAITING;
-            phone->playTone(Phone::Tone::NONE);
-            break;
-
-          case State::OFF_HOOK_WAITING_REMOTE:
-            *state = State::ON_HOOK_WAITING;
-            linphone->hangUp();
-            break;
-
-          case State::OFF_HOOK_ERROR:
-            *state = State::ON_HOOK_WAITING;
-            phone->playTone(Phone::Tone::NONE);
-            break;
-
-          case State::ACTIVE_CALL:
-            *state = State::ON_HOOK_WAITING;
-            linphone->hangUp();
-            break;
-
-          default:
-            printIgnore(state, onHook);
-        }
+        // irrespective of where we were, hanging up should bring us to a safe, known state
+        *state = State::ON_HOOK_WAITING;
+        phone->ring(false);
+        phone->playTone(Phone::Tone::NONE);
+        linphone->hangUp();
       } else {
         switch(*state) {
           case State::ON_HOOK_WAITING:
@@ -222,11 +212,12 @@ template <typename Scheduler>
 unifex::sender auto asyncMain(
   std::shared_ptr<Phone> phone, 
   std::shared_ptr<Subprocess> proc, 
+  std::shared_ptr<Sound> sound,
   std::shared_ptr<State> state, 
   Scheduler&& scheduler) {
 
   return unifex::let_value(
-    Linphone::create(proc, std::forward<Scheduler>(scheduler)),
+    Linphone::create(proc, sound, std::forward<Scheduler>(scheduler)),
     [phone, state](auto& linphone) {
       return unifex::let_value(
         unifex::when_all( // run in parallel
@@ -249,7 +240,8 @@ unifex::sender auto asyncMain(
 int main() {
   auto sch = ctx_.get_scheduler();
 
-  auto phone = Phone::create(20, sch);
+  auto sound = Sound::create();
+  auto phone = Phone::create(20, sound, sch);
   auto proc = std::make_shared<Subprocess>();
   auto state = std::make_shared<State>(State::ON_HOOK_WAITING);
 
@@ -257,7 +249,7 @@ int main() {
     unifex::on(
       sch,
       unifex::sequence(
-        asyncMain(phone, proc, state, sch),
+        asyncMain(phone, proc, sound, state, sch),
         phone->cleanup()
       )
     )

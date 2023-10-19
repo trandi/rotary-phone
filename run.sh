@@ -3,7 +3,7 @@
 #g++ -Wall -pthread -std=c++20 -fconcepts-diagnostics-depth=3 -o phone Linphone.cpp Phone.cpp main.cpp -lfmt -lpigpio -lrt -lunifex 
 
 if [ "$1" == 'build' ]; then
-  clang++ -Wall -pthread -std=c++20 -o phone Phone.cpp main.cpp -lfmt -lpigpio -lrt -lunifex 
+  clang++ -Wall -pthread -std=c++20 -o phone Sounds.cpp Phone.cpp main.cpp -lfmt -lpigpio -lrt -lunifex -lasound
 fi
 
 if [ "$1" == 'run' ] || [ "$2" == 'run' ]; then

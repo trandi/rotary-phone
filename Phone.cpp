@@ -180,7 +180,8 @@ void Phone::ring(bool on) {
 }
 
 void Phone::playTone(Phone::Tone tone) {
-  std::cout << "Play TONE: " << tone << std::endl;
+  std::cout << "PlayTone: " << tone << std::endl;
+  tone_ = tone; 
 }
 
 

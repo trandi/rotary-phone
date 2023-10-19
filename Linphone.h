@@ -35,6 +35,7 @@ private:
   std::string actionCmd_;
 
   std::shared_ptr<Subprocess> proc_;
+  std::shared_ptr<Sound> sound_;
   unifex::async_scope backgroundScope_;
 
   
@@ -44,7 +45,7 @@ private:
       proc_->runCmd("linphonecsh status hook"),     
       [&](const std::string statusRes) {
         std::string_view status(statusRes);
-        std::cout << "Linphone status: " << status << std::endl;
+        // std::cout << "Linphone status: " << status << std::endl;
         if(lastEvent_ != Event::INCOMING_CALL && status.starts_with("Incoming call")) {
           lastEvent_ = Event::INCOMING_CALL;
           statusChange_.set();
@@ -98,15 +99,20 @@ public:
   // returns sender<std::shared_ptr<Linphone>>
   template <typename Scheduler>
     requires unifex::scheduler<Scheduler>
-  static unifex::sender auto create(std::shared_ptr<Subprocess> proc, Scheduler&& scheduler) {
+  static unifex::sender auto create(
+    std::shared_ptr<Subprocess> proc, 
+    std::shared_ptr<Sound> sound,  
+    Scheduler&& scheduler
+  ) {
     return unifex::then(  
       proc->runCmd("linphonecsh init -c ./linphonerc"),
-      [&](const auto& startRes) {
+      [proc, sound, &scheduler] (const auto& startRes) {
         std::cout << "Started linphone daemon: " << startRes << std::endl;
         
         return std::make_shared<Linphone>(
           NotPubliclyConstructible{}, 
-          std::move(proc), 
+          std::move(proc),
+          std::move(sound),
           std::forward<Scheduler>(scheduler)
         );
       }
@@ -123,8 +129,9 @@ public:
   requires unifex::scheduler<Scheduler> //has to be Timed scheduler
   explicit Linphone(
     NotPubliclyConstructible, 
-    std::shared_ptr<Subprocess> proc, 
-    Scheduler&& scheduler): proc_(std::move(proc)) 
+    std::shared_ptr<Subprocess> proc,
+    std::shared_ptr<Sound> sound, 
+    Scheduler&& scheduler): proc_(std::move(proc)), sound_(std::move(sound)) 
   {
     // BACKGROUND tasks
     backgroundScope_.detached_spawn_on(
@@ -151,6 +158,7 @@ public:
   void dial(std::string_view destination) {
     std::string cmd = fmt::format("linphonecsh dial \"sip:{}\"", destination);
     std::cout << "Making call to: " << cmd << std::endl;
+    sound_->mixer->setVolume(70);
 
     actionCmd_ = cmd;
     actionCmdEvent_.set();
@@ -158,12 +166,14 @@ public:
 
   void hangUp() {
     std::cout << "Terminate call" << std::endl;
+    sound_->mixer->setVolume(3);
     actionCmd_ = "linphonecsh generic 'terminate'";
     actionCmdEvent_.set();
   }
 
   void answer() {
     std::cout << "Answering call" << std::endl;
+    sound_->mixer->setVolume(70);
     actionCmd_ = "linphonecsh generic 'answer'";
     actionCmdEvent_.set();
   } 
