@@ -1,5 +1,6 @@
 #include "Phone.h"
 #include "Linphone.h"
+#include "util.hpp"
 
 #include <iostream>
 #include <unifex/sync_wait.hpp>
@@ -219,17 +220,14 @@ unifex::sender auto asyncMain(
   return unifex::let_value(
     Linphone::create(proc, sound, std::forward<Scheduler>(scheduler)),
     [phone, state](auto& linphone) {
-      return unifex::let_value(
-        unifex::when_all( // run in parallel
+      return unifex::sequence(
+        discard_value(unifex::when_all( // run in parallel
           monitorLinphoneEvents(phone, linphone, state),
           monitorPhoneHookEvents(phone, linphone, state),
           monitorDigitEvents(phone, state),
           monitorNumberEvents(phone, linphone, state)
-        ),
-        [linphone] (auto& ...) {
-          // need to swallow/ignore the result from when_all
-          return linphone->cleanup();
-        }
+        )),
+        linphone->cleanup()
       );
     }
   );

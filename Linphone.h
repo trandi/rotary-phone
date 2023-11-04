@@ -1,4 +1,7 @@
+#pragma once
+
 #include "Subprocess.hpp"
+#include "util.hpp"
 
 #include <iostream>
 #include <memory>
@@ -85,11 +88,8 @@ private:
     // infinite loop
     return unifex::repeat_effect(
       // map to sender<void> to please repeat_effect
-      unifex::then(
-        waitAndRunCmd,
-        [](const auto& res) {
-          // swallow the result
-        } 
+      discard_value(
+        waitAndRunCmd
       )
     );
   }
