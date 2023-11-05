@@ -96,7 +96,7 @@ class Phone {
       unifex::just_from([&] {
         sound_->pcm->playTone(500, 400);
       }),
-      unifex::schedule_after(std::chrono::milliseconds(400))
+      unifex::schedule_after(std::chrono::milliseconds(800))
     );
 
 
@@ -120,7 +120,7 @@ class Phone {
           if (tone_ == Tone::CONTINUOUS) {
             return continuousToneSender;
           } else {
-            return  intermitentToneSender;
+            return intermitentToneSender;
           }
         }),
         [&] {

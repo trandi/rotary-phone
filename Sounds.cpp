@@ -42,20 +42,20 @@ void Pcm::open() {
     SND_PCM_ACCESS_RW_INTERLEAVED,
     1, // channels
     kRate,
-    1, // soft resample 
+    0, // soft resample 
     500000 // latency
   ), "pcm_set_params");
 }
 
 
 void Pcm::playTone(int freq, int durationMillis) {
-  const size_t len = (long)durationMillis * kRate / 1000;
+  const size_t len = durationMillis * (kRate / 1000);
   const float arg = 2 * 3.141592 * freq / kRate;
   
   int i = 0;
   while(i < len) {
     int j = 0;
-    for(; j<kBufferSize && i<len; j++, i++) {
+    for(; (j<kBufferSize) && (i<len); j++, i++) {
       buffer_[j] = CHAR_MAX * cos(arg * i);
     }
 
