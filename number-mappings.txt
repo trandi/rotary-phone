@@ -1,0 +1,2 @@
+#<digits dialled on phone>--><actual SIP URL to call>
+001-->sip:example-id@sip.linphone.org

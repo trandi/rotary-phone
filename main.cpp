@@ -3,6 +3,10 @@
 #include "util.hpp"
 
 #include <iostream>
+#include <fstream>
+#include <unordered_map>
+#include <algorithm>
+#include <cstring>
 #include <unifex/sync_wait.hpp>
 #include <unifex/for_each.hpp>
 #include <unifex/sequence.hpp>
@@ -16,9 +20,7 @@
 #include <unifex/timed_single_thread_context.hpp>
 
 
-// one and only thread running the whole app
-unifex::timed_single_thread_context ctx_;
-
+/////////////////// Utils ///////////////////
 
 enum class State {
   ON_HOOK_WAITING,
@@ -62,6 +64,49 @@ void printIgnore(std::shared_ptr<State> state, bool onHook) {
   std::cout << "Ignored | state: " << (*state) << " / Phone Hook status: " 
     << (onHook ? "true" : "false") << std::endl;
 };
+
+
+///////////////// Numbers mapping from file //////////////////
+constexpr auto kNumberMappingsFileName = "number-mappings.txt";
+constexpr auto kSeparator = "-->";
+
+std::unordered_map<std::string, std::string> numberMappings() {
+  std::ifstream file(kNumberMappingsFileName, std::ios::in);
+  std::unordered_map<std::string, std::string> res;
+  
+  std::string line;
+  while(std::getline(file, line)) {
+    if(line.starts_with("#")) {
+      std::cout << "Ignore comment in Numbers Mapping: " << line << std::endl;
+      continue;
+    }
+
+    auto pos = line.find(kSeparator);
+    if(pos == std::string::npos) {
+      std::cout << "Invalid Numbers Mapping line: " << line << std::endl;
+      continue;
+    }
+
+    auto key = line.substr(0, pos);
+    auto value = line.substr(pos + strlen(kSeparator));
+    res[key] = value;
+  }
+
+  return res;
+}
+
+std::string mapNumber(const std::string& in) {
+  auto mappings = numberMappings();
+  if(!mappings.contains(in)) {
+    std::cout << "No mapping for number: " << in << std::endl;
+    return in;
+  }
+
+  auto res = mappings[in];
+  std::cout << "Mapped number: " << in << " to: " << res << std::endl;
+  return res;
+}
+
 
 /////////////////  STATE MACHINE logic //////////////
 
@@ -199,13 +244,13 @@ unifex::sender auto monitorNumberEvents(
     [state, linphone] (const std::string& number) {
       if( *state == State::OFF_HOOK_WAITING_NO) {
         *state = State::OFF_HOOK_WAITING_REMOTE;
-        linphone->dial(number);
+        linphone->dial(mapNumber(number));
       }
     }
   );
 }
 
-/////////////////////////////////////////////////////////
+///////////////// Main Logic ////////////////////////////////////////
 
 
 template <typename Scheduler>
@@ -234,6 +279,8 @@ unifex::sender auto asyncMain(
 }
 
 
+// one and only thread running the whole app
+unifex::timed_single_thread_context ctx_;
 
 int main() {
   auto sch = ctx_.get_scheduler();

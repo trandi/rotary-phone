@@ -49,6 +49,14 @@ unsigned currentDigit, prevDigit;
 std::string currentNumber, prevNumber;
 unifex::async_auto_reset_event digitReady, numberReady;
 
+
+void updateNumber() {
+  prevNumber = currentNumber;
+  currentNumber = "";
+  std::cout << "Number ready: " << prevNumber << std::endl;
+  numberReady.set();
+}
+
 void pulseCallback(Pin gpio, int level, MicrosTick tick) {
   if(debounce(gpio, tick)) {
     if(gpio == PIN_DIAL_ENABLE) {
@@ -57,6 +65,11 @@ void pulseCallback(Pin gpio, int level, MicrosTick tick) {
         prevDigit = currentDigit;
         currentNumber += std::to_string(prevDigit);
         digitReady.set();
+
+        // 3 digits is plenty consider number ready
+        if(currentNumber.size() >= 3) {
+          updateNumber();
+        }
       } else {
         currentDigit = 0;
       }
@@ -70,10 +83,8 @@ void pulseCallback(Pin gpio, int level, MicrosTick tick) {
 void buttonCallback(Pin gpio, int level, MicrosTick tick) {
   if(debounce(gpio, tick)) {
     if(level) {
-      std::cout << "Button pressed, number recorded: " << currentNumber << std::endl;
-      prevNumber = currentNumber;
-      currentNumber = "";
-      numberReady.set();
+      std::cout << "Button pressed " << std::endl;
+      updateNumber();
     }
   }
 } 

@@ -77,8 +77,9 @@ private:
     // sender<std::string>
     auto waitAndRunCmd = unifex::let_value(
       actionCmdEvent_.async_wait(), // wait for command to arrive
-      [&] {
+      [this] {
         auto cmd = actionCmd_;
+        std::cout << "Linphone cmd : " << cmd << std::endl;
         actionCmdEvent_.reset();
         return proc_->runCmd(cmd);
       }
@@ -156,8 +157,7 @@ public:
 
   // ACTIONS
   void dial(std::string_view destination) {
-    std::string cmd = fmt::format("linphonecsh dial \"sip:{}\"", destination);
-    std::cout << "Making call to: " << cmd << std::endl;
+    std::string cmd = fmt::format("linphonecsh dial \"{}\"", destination);
     sound_->mixer->setVolume(70);
 
     actionCmd_ = cmd;
@@ -165,14 +165,12 @@ public:
   }
 
   void hangUp() {
-    std::cout << "Terminate call" << std::endl;
     sound_->mixer->setVolume(3);
     actionCmd_ = "linphonecsh generic 'terminate'";
     actionCmdEvent_.set();
   }
 
   void answer() {
-    std::cout << "Answering call" << std::endl;
     sound_->mixer->setVolume(70);
     actionCmd_ = "linphonecsh generic 'answer'";
     actionCmdEvent_.set();
