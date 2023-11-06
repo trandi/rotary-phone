@@ -1,3 +1,10 @@
+# Transform and old rotary phone into a SIP phone
+
+[See it working and how it was build video](https://youtu.be/B0LhAgV6f10) as well as more details on [my blog post](https://trandi.wordpress.com/2023/11/06/rotary-phone-voip-sip/).
+
+## Software
+
+
 Depends on (all of which I downloaded and built locally):
 - [libunifex](https://github.com/facebookexperimental/libunifex)
 - [fmtlib](https://github.com/fmtlib/fmt)
@@ -30,3 +37,17 @@ I had quite a lot of issues and spent literally weeks trying figure out why `Pho
 It turns out the problem was in `Linphone::monitorIncomingCalls()` where I defined a **lambda** creating a sender and then took that lambda by **reference** into the lambda composing the final sender returned from the method. 
 That capture (lambda or not)  would go out of scope by the time the returned sender was executed which explains why I'd have "random" results that didn't make any sense (behaviour would change depending on simply defining unused methods or not, something which only lately I realised was a clear sign of Undefined Behaviour).
 Overall, somewhat simliar to why one should avoid [Capturing Lambda Coroutines](https://clang.llvm.org/extra/clang-tidy/checks/cppcoreguidelines/avoid-capturing-lambda-coroutines.html).
+
+### State machine
+![State Machine](./media/RedPhone_StateMachine.jpg "State Machine")
+
+## Hardware
+
+- rotary phone
+- Raspberry Pi 3 A+ (important it's an "A" as the B wouldn't fit)
+- 12V wall adaptor
+- DC to DC step down converter (bells work on 12V direclty, but RaspberyPi needs 5V)
+
+### 3D printed plastic support for the RaspberryPi
+![](./media/RedPhone_RaspberryPiSupport.jpg )
+
